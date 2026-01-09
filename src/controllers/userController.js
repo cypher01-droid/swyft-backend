@@ -266,7 +266,62 @@ const getMyKYCStatus = async (req, res) => {
   }
 };
 
+export const getUserStats = async (req, res) => {
+  try {
+    const uid = req.uid;
+    const range = req.query.range || '90d';
 
+    const days = range === '30d' ? 30 : 90;
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - days);
+
+    const snap = await db
+      .collection('transactions')
+      .where('uid', '==', uid)
+      .where('createdAt', '>=', fromDate)
+      .get();
+
+    let deposits = 0;
+    let withdrawals = 0;
+    let pending = 0;
+    const allocation = {};
+    const balanceHistory = [];
+
+    snap.forEach(doc => {
+      const tx = doc.data();
+
+      if (!allocation[tx.asset]) allocation[tx.asset] = 0;
+
+      if (tx.status === 'Completed') {
+        if (tx.type === 'Deposit') deposits += tx.amount;
+        if (tx.type === 'Withdraw') withdrawals += tx.amount;
+      }
+
+      if (tx.status === 'Pending') pending += tx.amount;
+
+      if (tx.type !== 'Withdraw') allocation[tx.asset] += tx.amount;
+      else allocation[tx.asset] -= tx.amount;
+
+      balanceHistory.push({
+        date: tx.createdAt.toDate().toISOString().split('T')[0],
+        balance: tx.balanceAfter || 0
+      });
+    });
+
+    res.json({
+      balanceHistory,
+      deposits,
+      withdrawals,
+      allocation,
+      available: deposits - withdrawals,
+      pending
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Stats failed' });
+  }
+};
 // Export the new function
 module.exports = { 
   registerUser, 
@@ -275,5 +330,6 @@ module.exports = {
   getUserProfile ,
   requestDeposit,
   getMyKYCStatus,
-  submitKYC
+  submitKYC,
+  getUserStats
 };
