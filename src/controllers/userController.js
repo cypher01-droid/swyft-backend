@@ -266,7 +266,7 @@ const getMyKYCStatus = async (req, res) => {
   }
 };
 
-export const getUserStats = async (req, res) => {
+const getUserStats = async (req, res) => {
   try {
     const uid = req.uid;
     const range = req.query.range || '90d';
