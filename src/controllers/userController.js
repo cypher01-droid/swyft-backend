@@ -5,31 +5,48 @@ const registerUser = async (req, res) => {
   try {
     const { uid, email, fullName, phone, kycDocs } = req.body;
 
+    // 1️⃣ Safety Check: Ensure UID exists
+    if (!uid) {
+      return res.status(400).json({ error: "Missing UID. User must be authenticated first." });
+    }
+
+    // 2️⃣ Initialize User Document with safety for kycDocs
     const userRef = db.collection('users').doc(uid);
     await userRef.set({
-      fullName,
-      email,
-      phone,
+      fullName: fullName || "New User",
+      email: email || "",
+      phone: phone || "",
       kycStatus: 'pending',
       kyc: {
-        idDocument: kycDocs.idDocument,
-        addressProof: kycDocs.addressProof,
+        idDocument: kycDocs?.idDocument || null,
+        addressProof: kycDocs?.addressProof || null,
         submittedAt: new Date().toISOString()
       },
       createdAt: new Date().toISOString()
     });
 
+    // 3️⃣ Initialize Balances (Moved to ensure this always runs)
     const balanceBatch = db.batch();
-    ['USD', 'BTC', 'ETH', 'USDT'].forEach(currency => {
+    const currencies = ['USD', 'BTC', 'ETH', 'USDT'];
+    
+    currencies.forEach(currency => {
       const ref = db.collection('accounts').doc(uid).collection('balances').doc(currency);
-      balanceBatch.set(ref, { available: 0, pending: 0 });
+      balanceBatch.set(ref, { 
+        available: 0, 
+        pending: 0,
+        updatedAt: new Date().toISOString()
+      });
     });
 
     await balanceBatch.commit();
+    
+    console.log(`Successfully initialized account for UID: ${uid}`);
     res.status(201).json({ message: "Account & KYC references initialized." });
+
   } catch (error) {
-    console.error("Registration Error:", error);
-    res.status(500).json({ error: "Failed to initialize user account." });
+    // This will now show up in your Vercel Runtime Logs
+    console.error("CRITICAL Registration Error:", error);
+    res.status(500).json({ error: "Failed to initialize user account structure." });
   }
 };
 
