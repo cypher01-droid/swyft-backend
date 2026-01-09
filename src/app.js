@@ -14,8 +14,7 @@ const app = express();
 
 // 2. Optimized CORS for 2026
 app.use(cors({
-  origin: [
-    'http://localhost:5173', 
+  origin: [ 
     'https://www.swyfttrust.com', 
     'https://swyfttrust.com'
   ],
