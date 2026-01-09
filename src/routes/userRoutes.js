@@ -13,7 +13,7 @@ router.get('/header', verifyToken, getHeaderData);
 router.get('/profile', verifyToken, getUserProfile);
 router.post('/deposit', verifyToken, requestDeposit);
 router.post('/submit', verifyToken, submitKYC);
-router.get('/stats', auth, getUserStats);
+router.get('/stats', verifyToken, getUserStats);
 
 // User checks own KYC status
 router.get('/me', verifyToken, getMyKYCStatus);
