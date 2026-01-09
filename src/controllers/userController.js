@@ -41,66 +41,86 @@ const getUserDashboard = async (req, res) => {
 
     // 1️⃣ Fetch user profile
     const userDoc = await db.collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    
+    // Fallback if user document is missing but auth exists
+    const userData = userDoc.exists ? userDoc.data() : { fullName: "User" };
 
-    const userData = userDoc.data();
-
-    // 2️⃣ Fetch balances
-    const balancesSnap = await db
-      .collection('accounts')
-      .doc(uid)
-      .collection('balances')
-      .get();
-
-    const balances = {
+    // 2️⃣ Fetch balances with a guaranteed structure
+    // We initialize this first so even if the DB is empty, the frontend won't crash
+    let balances = {
       USD: { available: 0, pending: 0 },
       BTC: { available: 0, pending: 0 },
       ETH: { available: 0, pending: 0 },
       USDT: { available: 0, pending: 0 }
     };
 
-    balancesSnap.forEach(doc => {
-      balances[doc.id] = {
-        available: doc.data().available || 0,
-        pending: doc.data().pending || 0
-      };
-    });
+    try {
+      const balancesSnap = await db
+        .collection('accounts')
+        .doc(uid)
+        .collection('balances')
+        .get();
+
+      if (!balancesSnap.empty) {
+        balancesSnap.forEach(doc => {
+          // Only overwrite if the currency exists in our default list
+          if (balances[doc.id]) {
+            balances[doc.id] = {
+              available: Number(doc.data().available) || 0,
+              pending: Number(doc.data().pending) || 0
+            };
+          }
+        });
+      }
+    } catch (balError) {
+      console.error('Non-critical: Failed to fetch balances collection', balError);
+      // We don't throw here, so the frontend still gets the default 0 balances
+    }
 
     // 3️⃣ Fetch recent transactions (last 5)
-    const txSnap = await db
-      .collection('transactions')
-      .where('uid', '==', uid)
-      .orderBy('createdAt', 'desc')
-      .limit(5)
-      .get();
+    let recentActivity = [];
+    try {
+      const txSnap = await db
+        .collection('transactions')
+        .where('uid', '==', uid)
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get();
 
-    const recentActivity = txSnap.docs.map(doc => {
-      const tx = doc.data();
-      return {
-        id: doc.id,
-        type: tx.type,
-        amount:
-          tx.currency === 'USD'
-            ? `$${Number(tx.amount).toFixed(2)}`
-            : `${tx.amount} ${tx.currency}`,
-        currency: tx.currency,
-        method: tx.method || tx.network || tx.currency,
-        status: tx.status
-      };
-    });
+      recentActivity = txSnap.docs.map(doc => {
+        const tx = doc.data();
+        return {
+          id: doc.id,
+          type: tx.type || 'Transaction',
+          amount:
+            tx.currency === 'USD'
+              ? `$${Number(tx.amount || 0).toFixed(2)}`
+              : `${tx.amount || 0} ${tx.currency || ''}`,
+          currency: tx.currency || 'USD',
+          method: tx.method || tx.network || tx.currency || 'System',
+          status: tx.status || 'Pending'
+        };
+      });
+    } catch (txError) {
+      console.error('Non-critical: Failed to fetch transactions', txError);
+      // Empty array is fine for the frontend
+    }
 
-    // 4️⃣ Final response
-    res.json({
-      fullName: userData.fullName,
-      balances,
-      recentActivity
+    // 4️⃣ Final response - Guaranteed to have 'balances'
+    return res.status(200).json({
+      fullName: userData.fullName || 'User',
+      balances: balances,
+      recentActivity: recentActivity
     });
 
   } catch (error) {
-    console.error('Dashboard Error:', error);
-    res.status(500).json({ error: 'Failed to load dashboard' });
+    console.error('CRITICAL: Dashboard Load Failure:', error);
+    // Even on a hard error, send the structure to prevent the "undefined" crash
+    res.status(500).json({ 
+      error: 'Internal Server Error',
+      balances: { USD: { available: 0, pending: 0 } },
+      recentActivity: [] 
+    });
   }
 };
 
