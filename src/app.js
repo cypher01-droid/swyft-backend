@@ -3,7 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 const admin = require('firebase-admin');
 
-// 1. Initialize Firebase Admin (Top of file)
+// 1. Initialize Firebase Admin
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))
@@ -12,19 +12,35 @@ if (!admin.apps.length) {
 
 const app = express();
 
-// 2. Optimized CORS for 2026
+// 2. Optimized CORS (Includes Localhost for testing)
+const allowedOrigins = [
+  'https://www.swyfttrust.com', 
+  'https://swyfttrust.com',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: [ 
-    'https://www.swyfttrust.com', 
-    'https://swyfttrust.com'
-  ],
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS policy: This origin is not allowed'), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// 3. CRITICAL: JSON Parser MUST come before routes
+// 3. Explicitly handle Preflight (OPTIONS) requests
+app.options('*', cors());
+
+// 4. JSON Parser (MUST come before routes)
 app.use(express.json());
 
-// 4. Routes
+// 5. Routes
 const userRoutes = require('./routes/userRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -40,11 +56,11 @@ app.get('/api/status', (req, res) => {
   res.json({ status: 'online', timestamp: new Date().toISOString() });
 });
 
-// 5. Global Error Handler
+// 6. Global Error Handler
 app.use((err, req, res, next) => {
   console.error("!!! SERVER ERROR !!!");
   console.error(err.stack);
-  res.status(500).json({ error: err.message });
+  res.status(500).json({ error: err.message || "Internal Server Error" });
 });
 
 module.exports = app;

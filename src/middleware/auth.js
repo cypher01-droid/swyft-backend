@@ -1,29 +1,42 @@
 // src/middleware/auth.js
-const { auth } = require('../config/firebase');
+const admin = require('firebase-admin');
 
 const verifyToken = async (req, res, next) => {
-  // 1. Get the token from the 'Authorization' header
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.warn("Auth Attempt Failed: No Bearer Token");
     return res.status(401).json({ error: 'Unauthorized: No token provided' });
   }
 
   const idToken = authHeader.split('Bearer ')[1];
 
   try {
-    // 2. Use Firebase Admin to verify the token
-    const decodedToken = await auth.verifyIdToken(idToken);
+    // We use the admin global object directly to ensure it is initialized
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
     
-    // 3. Attach the user info to the request object
+    // Attach the user info to the request object
     req.user = decodedToken; 
     
-    // 4. Move to the next step (the controller)
     next();
   } catch (error) {
-    console.error('Error verifying Firebase token:', error);
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+    console.error('Firebase Token Verification Error:', error.code);
+
+    // Provide specific feedback for expired tokens
+    if (error.code === 'auth/id-token-expired') {
+        return res.status(401).json({ error: 'Session expired. Please refresh or login again.' });
+    }
+
+    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };
 
-module.exports = { verifyToken };
+// Optional: Add a second middleware for Admin-only routes
+const verifyAdmin = async (req, res, next) => {
+    if (!req.user || !req.user.admin) {
+        return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    next();
+};
+
+module.exports = { verifyToken, verifyAdmin };
